@@ -162,6 +162,6 @@ def resolve_demo_session(db: Session, raw_token: str) -> DemoSession:
     if expires_at is None or expires_at <= now:
         if demo_session.status != "expired":
             demo_session.status = "expired"
-            db.flush()
+            db.commit()
         raise InvalidDemoSession("Invalid or expired demo session")
     return demo_session

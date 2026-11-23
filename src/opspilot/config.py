@@ -25,10 +25,20 @@ class Settings(BaseSettings):
     embedding_model: str = "hashing-tfidf-v1"
     embedding_dimensions: int = Field(default=1024, ge=128, le=8192)
     groq_api_key: SecretStr | None = None
+    llm_provider: str = "groq"
     groq_model: str = "openai/gpt-oss-20b"
     openai_base_url: str | None = None
     openai_api_key: SecretStr | None = None
+    openai_model: str = "gpt-4o-mini"
     openai_embedding_model: str | None = None
+    llm_timeout_seconds: int = Field(default=15, ge=3, le=60)
+    max_investigations_per_session: int = Field(default=5, ge=1, le=20)
+    max_active_investigation_seconds: int = Field(default=90, ge=15, le=180)
+    max_tool_calls_per_investigation: int = Field(default=10, ge=1, le=10)
+    max_investigation_turns: int = Field(default=8, ge=1, le=8)
+    max_tokens_per_investigation: int = Field(default=20000, ge=1000, le=20000)
+    max_estimated_cost_usd: float = Field(default=0.10, gt=0, le=0.10)
+    approval_ttl_minutes: int = Field(default=30, ge=1, le=1440)
     session_ttl_hours: int = Field(default=72, ge=1, le=720)
     log_level: str = "INFO"
 

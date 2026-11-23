@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101827" />
+    <title>OpsPilot | Incident investigator</title>
+    <style>
+      :root { color-scheme: light; --ink:#182336; --muted:#66748a; --line:#dce3ec; --paper:#fff; --wash:#f3f6fa; --blue:#315ee8; --green:#16845b; --amber:#9b5b00; --red:#b3323b; }
+      * { box-sizing:border-box; } body { margin:0; background:var(--wash); color:var(--ink); font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+      header { background:#101827; color:white; padding:20px max(22px,calc((100vw - 1180px)/2)); display:flex; align-items:center; justify-content:space-between; gap:20px; }
+      header h1 { font-size:20px; margin:0; letter-spacing:-.02em; } header p { margin:2px 0 0; color:#aebbd0; font-size:13px; }
+      main { max-width:1180px; margin:28px auto; padding:0 20px 50px; display:grid; gap:18px; grid-template-columns:minmax(270px,340px) minmax(0,1fr); }
+      .panel { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow:0 3px 14px #18233608; }
+      .side { display:grid; align-content:start; gap:16px; } h2 { margin:0 0 12px; font-size:17px; letter-spacing:-.015em; } h3 { margin:18px 0 8px; font-size:14px; } p { margin:5px 0 12px; } .muted { color:var(--muted); } .small { font-size:12px; }
+      label { display:block; font-size:13px; font-weight:650; margin:12px 0 5px; } select,textarea,input { width:100%; border:1px solid #cbd4e1; border-radius:8px; padding:10px 11px; font:inherit; color:var(--ink); background:white; } textarea { min-height:90px; resize:vertical; }
+      button { cursor:pointer; border:0; border-radius:8px; padding:10px 14px; background:var(--blue); color:white; font:inherit; font-weight:650; } button:disabled { opacity:.55; cursor:wait; } button.secondary { color:var(--ink); background:#e9eef5; } button.danger { background:#fff0ef; color:var(--red); border:1px solid #f1c5c6; } button.good { background:var(--green); } .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .full { width:100%; margin-top:12px; }
+      .incident { border:1px solid var(--line); border-radius:10px; padding:12px; cursor:pointer; margin:8px 0; } .incident:hover,.incident.selected { border-color:var(--blue); background:#f5f7ff; } .incident strong { display:block; font-size:14px; } .badge { display:inline-flex; border-radius:99px; padding:2px 8px; background:#eef2f7; color:#48566b; font-size:11px; font-weight:700; text-transform:uppercase; }
+      .status { border-radius:9px; padding:11px 13px; background:#f1f4f8; color:#4b5a70; margin:10px 0; } .status.running { background:#edf3ff; color:#234ebd; } .status.waiting_approval { background:#fff6e7; color:var(--amber); } .status.completed { background:#eaf7f0; color:var(--green); } .status.failed { background:#fff0ef; color:var(--red); }
+      .step { display:grid; grid-template-columns:24px 1fr; gap:9px; padding:9px 0; border-bottom:1px solid #edf0f4; } .step:last-child { border:0; } .dot { width:20px;height:20px;border-radius:50%;background:#e7edf6;color:#3a5bb0;font-size:11px;font-weight:bold;display:grid;place-items:center;margin-top:2px; } .evidence { padding:11px; margin:8px 0; border:1px solid var(--line); border-radius:9px; background:#fcfdff; } .evidence summary { cursor:pointer; font-weight:650; } .evidence pre { white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; color:#35445b; }
+      .report-callout { border-left:3px solid var(--blue); padding:4px 0 4px 12px; margin:10px 0 16px; } .approval { border:1px solid #ead7b1; background:#fffaf0; border-radius:10px; padding:15px; margin-top:16px; } .hidden { display:none !important; } .error { color:var(--red); font-weight:600; } .success { color:var(--green); font-weight:600; } .history-item { display:block; width:100%; text-align:left; color:var(--ink); background:white; border:1px solid var(--line); margin:6px 0; font-size:13px; }
+      @media(max-width:800px) { main { grid-template-columns:1fr; margin-top:16px; padding:0 12px 32px; } header { padding:16px; } .side { grid-template-columns:1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div><h1>OpsPilot <span style="color:#92adff">/</span> Incident investigator</h1><p>Adaptive read-only investigation · human-approved synthetic change</p></div>
+      <span class="badge" style="background:#233148;color:#c9d5e6">Portfolio demo</span>
+    </header>
+    <main>
+      <aside class="side">
+        <section class="panel" id="setup-panel">
+          <h2>Start an isolated demo</h2>
+          <p class="muted small">Each session receives its own synthetic incident and asset records. No real operations systems are connected.</p>
+          <label for="scenario">Scenario</label><select id="scenario"></select>
+          <button id="start-demo" class="full">Start demo session</button>
+          <div id="setup-message" class="small muted" aria-live="polite"></div>
+        </section>
+        <section class="panel hidden" id="incident-panel">
+          <div class="row" style="justify-content:space-between"><h2 style="margin:0">Incident</h2><button id="new-session" class="secondary small">New session</button></div>
+          <div id="incident-list"></div>
+        </section>
+        <section class="panel hidden" id="history-panel"><h2>Investigation history</h2><div id="history-list" class="muted small">No investigations yet.</div></section>
+      </aside>
+      <section class="panel" id="work-panel">
+        <h2>Evidence-led investigation</h2>
+        <p class="muted">Choose a synthetic incident to begin. The investigator selects and refines read-only tools from its previous observations. Any proposed database action pauses for your explicit approval.</p>
+        <div id="health" class="status">Checking local services…</div>
+        <div id="selection" class="muted">Start a demo session to load your incident.</div>
+        <div id="detail" class="hidden"></div>
+        <div id="run-area" class="hidden">
+          <label for="request">Investigation request</label>
+          <textarea id="request">Investigate the likely cause and show the evidence that supports the conclusion.</textarea>
+          <button id="investigate" class="full">Start investigation</button>
+        </div>
+        <div id="run-result" class="hidden" aria-live="polite"></div>
+      </section>
+    </main>
+    <script>
+      const el = (id) => document.getElementById(id);
+      const state = { incidents: [], selected: null, runId: null, polling: false };
+      const text = (node, value) => { node.textContent = value ?? ""; };
+      async function api(path, options = {}) {
+        const response = await fetch(path, { credentials:"same-origin", headers:{"Content-Type":"application/json", ...(options.headers||{})}, ...options });
+        if (!response.ok) { let detail = `Request failed (${response.status})`; try { const body=await response.json(); detail=body.detail||detail; } catch {} throw new Error(detail); }
+        return response.status === 204 ? null : response.json();
+      }
+      function showError(message) { const node=el("setup-message"); node.className="small error"; text(node,message); }
+      async function loadScenarios() {
+        try { const data=await api("/api/scenarios"); el("scenario").replaceChildren(...data.scenarios.map((item)=>{const option=document.createElement("option");option.value=item.scenario_id;option.textContent=`${item.title} · ${item.severity}`;return option;})); }
+        catch(error) { showError(error.message); }
+      }
+      async function checkHealth() {
+        try { const data=await api("/api/health/ready"); el("health").className="status"; text(el("health"), `PostgreSQL and Chroma ready · Groq configured: ${data.llm_configured ? "yes" : "no"}`); }
+        catch(error) { el("health").className="status failed"; text(el("health"),error.message); }
+      }
+      async function startDemo() {
+        const button=el("start-demo"); button.disabled=true; text(el("setup-message"),"Creating isolated synthetic records…");
+        try { await api("/api/demo-sessions",{method:"POST",body:JSON.stringify({scenario_id:el("scenario").value})}); el("setup-panel").classList.add("hidden"); el("incident-panel").classList.remove("hidden"); el("history-panel").classList.remove("hidden"); await loadIncidents(); await loadHistory(); }
+        catch(error) { showError(error.message); button.disabled=false; }
+      }
+      async function loadIncidents() {
+        const data=await api("/api/incidents"); state.incidents=data.incidents; const list=el("incident-list"); list.replaceChildren();
+        for (const incident of data.incidents) { const card=document.createElement("div"); card.className="incident"+(state.selected===incident.id?" selected":""); const title=document.createElement("strong"); text(title,incident.title); const meta=document.createElement("span"); meta.className="muted small"; text(meta,`${incident.severity} · ${incident.service_key}`); card.append(title,meta); card.onclick=()=>selectIncident(incident.id); list.append(card); }
+        if (data.incidents.length) selectIncident(state.selected||data.incidents[0].id);
+      }
+      async function selectIncident(id) {
+        state.selected=id; const incident=await api(`/api/incidents/${id}`); el("selection").classList.add("hidden"); el("detail").classList.remove("hidden"); el("run-area").classList.remove("hidden");
+        const detail=el("detail"); detail.replaceChildren(); const title=document.createElement("h3"); text(title,`${incident.title} · ${incident.severity}`); const desc=document.createElement("p"); text(desc,incident.description); const meta=document.createElement("p"); meta.className="muted small"; text(meta,`${incident.external_key} · ${incident.service_key} · ${incident.status}`); detail.append(title,desc,meta);
+        for (const asset of incident.assets) { const assetLine=document.createElement("div"); assetLine.className="status"; text(assetLine,`${asset.asset_key} · ${asset.asset_type} · current state: ${asset.operational_state}`); detail.append(assetLine); }
+        document.querySelectorAll(".incident").forEach((card,index)=>card.classList.toggle("selected",state.incidents[index]?.id===id));
+      }
+      async function startInvestigation() {
+        const button=el("investigate"); button.disabled=true; el("run-result").classList.remove("hidden"); el("run-result").replaceChildren();
+        try { const data=await api("/api/investigations",{method:"POST",body:JSON.stringify({incident_id:state.selected,request_text:el("request").value})}); state.runId=data.run_id; await loadHistory(); pollRun(data.run_id); }
+        catch(error) { const message=document.createElement("p"); message.className="error"; text(message,error.message); el("run-result").append(message); button.disabled=false; }
+      }
+      function section(title) { const header=document.createElement("h3"); text(header,title); el("run-result").append(header); }
+      function renderRun(run) {
+        const area=el("run-result"); area.replaceChildren(); const status=document.createElement("div"); status.className=`status ${run.status}`; text(status,`Investigation ${run.status.replaceAll("_"," ")}${run.error_code?` · ${run.error_code}`:""}`); area.append(status);
+        if (run.budget) { const budget=document.createElement("p"); budget.className="muted small"; text(budget,`Tool calls ${run.budget.tool_calls??0} · turns ${run.budget.loop_turns??0} · tokens ${run.budget.total_tokens??0} · estimated cost $${Number(run.budget.estimated_cost_usd??0).toFixed(4)}`); area.append(budget); }
+        if (run.tool_trace?.length) { section("Agent activity"); for (const item of run.tool_trace) { const step=document.createElement("div"); step.className="step"; const dot=document.createElement("span"); dot.className="dot"; text(dot,"✓"); const content=document.createElement("div"); const strong=document.createElement("strong"); text(strong,item.tool_name||item.kind); const summary=document.createElement("div"); summary.className="muted small"; text(summary,item.rationale||item.status||item.observation_id||""); content.append(strong,summary); step.append(dot,content); area.append(step); } }
+        if (run.observations?.length) { section("Observed evidence"); for (const observation of run.observations) { const box=document.createElement("details"); box.className="evidence"; const summary=document.createElement("summary"); text(summary,`${observation.tool_name} · ${observation.summary}`); box.append(summary); for (const record of observation.records||[]) { const pre=document.createElement("pre"); text(pre,JSON.stringify(record,null,2)); box.append(pre); } area.append(box); } }
+        if (run.report) { section("Investigation report"); for (const [label,value] of [["Incident summary",run.report.incident_summary],["Probable root cause",run.report.probable_root_cause],["Supporting reasoning",run.report.supporting_reasoning],["Uncertainty",run.report.uncertainty],["Recommended resolution",run.report.resolution_recommendation]]) { const block=document.createElement("div"); block.className="report-callout"; const title=document.createElement("strong"); text(title,label); const paragraph=document.createElement("p"); text(paragraph,value); block.append(title,paragraph); area.append(block); } const refs=document.createElement("p"); refs.className="muted small"; text(refs,`Evidence references: ${(run.report.evidence_refs||[]).join(", ")||"none"}`); area.append(refs); }
+        if (run.proposed_action && ["pending","approved"].includes(run.proposed_action.status)) { const box=document.createElement("div"); box.className="approval"; const title=document.createElement("h3"); title.style.marginTop="0"; text(title,"Human approval required"); const instruction=document.createElement("p"); text(instruction,"Review these exact immutable parameters. Approval applies only to this session-owned synthetic asset."); const payload=document.createElement("pre"); payload.className="evidence"; text(payload,JSON.stringify(run.proposed_action.parameters,null,2)); box.append(title,instruction,payload); if(run.proposed_action.status==="pending"){ const controls=document.createElement("div"); controls.className="row"; for(const decision of ["approved","rejected"]){ const button=document.createElement("button"); button.className=decision==="approved"?"good":"danger"; text(button,decision==="approved"?"Approve action":"Reject action"); button.onclick=()=>decide(run.proposed_action,decision); controls.append(button); } box.append(controls); } area.append(box); }
+        if (run.execution) { section("Database action result"); const result=document.createElement("div"); result.className=run.execution.status==="succeeded"?"status completed":"status failed"; text(result,`${run.execution.status}: ${JSON.stringify(run.execution.result)}`); area.append(result); }
+        if (run.status==="interrupted") { const resume=document.createElement("button"); resume.className="secondary"; text(resume,"Resume from saved checkpoint"); resume.onclick=async()=>{try{await api(`/api/investigations/${run.id}/resume`,{method:"POST"});pollRun(run.id);}catch(error){const message=document.createElement("p");message.className="error";text(message,error.message);area.append(message);}};area.append(resume); }
+        if (run.status==="completed"||run.status==="failed"||run.status==="interrupted") el("investigate").disabled=false;
+        loadAudit(run.id);
+      }
+      async function pollRun(runId) { if(state.polling)return; state.polling=true; try { for(let n=0;n<60;n++){ const run=await api(`/api/investigations/${runId}`); renderRun(run); await loadHistory(); if(["completed","failed","waiting_approval","interrupted"].includes(run.status))break; await new Promise(resolve=>setTimeout(resolve,1500)); } } catch(error) { const message=document.createElement("p"); message.className="error"; text(message,error.message); el("run-result").append(message); } finally { state.polling=false; el("investigate").disabled=false; } }
+      async function decide(action,decision) { try { await api(`/api/actions/${action.id}/approval`,{method:"POST",body:JSON.stringify({decision,expected_payload_hash:action.payload_hash,reason:"Reviewed in the OpsPilot demo interface"})}); await pollRun(action.run_id); } catch(error) { const message=document.createElement("p"); message.className="error"; text(message,error.message); el("run-result").append(message); } }
+      async function loadAudit(runId) { try { const data=await api(`/api/investigations/${runId}/audit`); if(!data.events.length)return; section("Audit history"); for(const item of data.events){const row=document.createElement("div");row.className="step";const dot=document.createElement("span");dot.className="dot";text(dot,"•");const content=document.createElement("div");const strong=document.createElement("strong");text(strong,item.event_type);const date=document.createElement("div");date.className="muted small";text(date,new Date(item.occurred_at).toLocaleString());content.append(strong,date);row.append(dot,content);el("run-result").append(row);} }catch{} }
+      async function loadHistory() { try { const data=await api("/api/investigations"); const box=el("history-list"); box.replaceChildren(); if(!data.investigations.length){text(box,"No investigations yet.");return;} for(const run of data.investigations){const button=document.createElement("button");button.className="history-item";text(button,`${run.status.replaceAll("_"," ")} · ${new Date(run.started_at).toLocaleString()}`);button.onclick=()=>pollRun(run.id);box.append(button);} }catch{} }
+      async function newSession() { try { await api("/api/demo-sessions/current",{method:"DELETE"}); } catch{} state.selected=null;state.runId=null;el("incident-panel").classList.add("hidden");el("history-panel").classList.add("hidden");el("setup-panel").classList.remove("hidden");el("detail").classList.add("hidden");el("run-area").classList.add("hidden");el("run-result").classList.add("hidden"); }
+      el("start-demo").onclick=startDemo; el("investigate").onclick=startInvestigation; el("new-session").onclick=newSession;
+      loadScenarios();checkHealth();
+    </script>
+  </body>
+</html>

@@ -26,6 +26,44 @@ services:
       - "127.0.0.1:${CHROMA_PORT:-8001}:8000"
     volumes:
       - chroma_data:/data
+
+  app:
+    build: .
+    environment:
+      OPSPILOT_ENV: ${OPSPILOT_ENV:-development}
+      OPSPILOT_DATA_DIR: /app/data
+      DATABASE_URL: ${OPSPILOT_DATABASE_URL:-postgresql+psycopg://opspilot:opspilot_dev@postgres:5432/opspilot}
+      CHROMA_MODE: http
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      CHROMA_COLLECTION_PREFIX: ${CHROMA_COLLECTION_PREFIX:-opspilot}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local_hash}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-hashing-tfidf-v1}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-72}
+      MAX_INVESTIGATIONS_PER_SESSION: ${MAX_INVESTIGATIONS_PER_SESSION:-5}
+      MAX_ACTIVE_INVESTIGATION_SECONDS: ${MAX_ACTIVE_INVESTIGATION_SECONDS:-90}
+      MAX_TOOL_CALLS_PER_INVESTIGATION: ${MAX_TOOL_CALLS_PER_INVESTIGATION:-10}
+      MAX_INVESTIGATION_TURNS: ${MAX_INVESTIGATION_TURNS:-8}
+      MAX_TOKENS_PER_INVESTIGATION: ${MAX_TOKENS_PER_INVESTIGATION:-20000}
+      MAX_ESTIMATED_COST_USD: ${MAX_ESTIMATED_COST_USD:-0.10}
+      APPROVAL_TTL_MINUTES: ${APPROVAL_TTL_MINUTES:-30}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-15}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${OPSPILOT_PORT:-7860}:7860"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+
 volumes:
   postgres_data:
   chroma_data:

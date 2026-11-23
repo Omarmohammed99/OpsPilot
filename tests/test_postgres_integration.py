@@ -1,12 +1,19 @@
 """Optional real-PostgreSQL integration tests using a dedicated disposable test database."""
 
 import os
+import uuid
 from pathlib import Path
+from typing import TypedDict
 
+import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from opspilot.db.base import Base
@@ -29,6 +36,11 @@ def postgres_test_db():
     config.set_main_option("script_location", str(project_root / "migrations"))
     config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     command.upgrade(config, "head")
+    connection_string = (
+        make_url(url).set(drivername="postgresql").render_as_string(hide_password=False)
+    )
+    with psycopg.connect(connection_string, autocommit=True) as connection:
+        PostgresSaver(connection).setup()
     engine = create_engine(url, pool_pre_ping=True)
     managed_tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
     with engine.begin() as connection:
@@ -75,3 +87,38 @@ def test_full_ingestion_repeat_and_demo_session_isolation(postgres_test_db, tmp_
         incident_a = db.scalar(select(Incident).where(Incident.demo_session_id == session_a.id))
         incident_b = db.scalar(select(Incident).where(Incident.demo_session_id == session_b.id))
         assert incident_a.id != incident_b.id
+
+
+class ApprovalState(TypedDict, total=False):
+    value: int
+    approved: bool
+
+
+def test_postgres_checkpoint_survives_connection_restart_and_resumes_interrupt(postgres_test_db):
+    url = postgres_test_db.url.render_as_string(hide_password=False)
+    connection_string = (
+        make_url(url).set(drivername="postgresql").render_as_string(hide_password=False)
+    )
+
+    def wait_for_approval(state: ApprovalState):
+        answer = interrupt({"value": state["value"], "requires_human": True})
+        return {"approved": answer["approved"]}
+
+    builder = StateGraph(ApprovalState)
+    builder.add_node("approval", wait_for_approval)
+    builder.add_edge(START, "approval")
+    builder.add_edge("approval", END)
+    thread_id = f"checkpoint-restart-{uuid.uuid4()}"
+    config = {"configurable": {"thread_id": thread_id}}
+
+    with psycopg.connect(connection_string, autocommit=True) as connection:
+        graph = builder.compile(checkpointer=PostgresSaver(connection))
+        paused = graph.invoke({"value": 7}, config)
+        assert paused["value"] == 7
+        assert graph.get_state(config).next == ("approval",)
+
+    with psycopg.connect(connection_string, autocommit=True) as connection:
+        graph = builder.compile(checkpointer=PostgresSaver(connection))
+        resumed = graph.invoke(Command(resume={"approved": True}), config)
+        assert resumed["approved"] is True
+        assert graph.get_state(config).next == ()
