@@ -49,8 +49,18 @@ On Windows, PostgreSQL integration tests can run in a disposable Linux container
 ## Deployment readiness and unverified items
 
 - The Docker image and Compose stack are intended for a Hugging Face Docker Space. The image listens on port 7860. Public deployment remains unverified.
-- Neon is not provisioned. Connection-string and checkpoint behavior must be exercised against an actual Neon project before launch. In particular, test the app’s SQLAlchemy pool and LangGraph psycopg checkpointer using the selected direct or pooled endpoint.
+- Service snapshot checked 2026-11-23: Hugging Face CPU Basic is listed as 2 vCPU, 16 GB RAM, 50 GB non-persistent disk, and no hourly hardware fee. However, creating a Docker Space from a personal account requires HF PRO at $9/month (organizations require Team or Enterprise); free personal accounts cannot create a Docker Space. Neon Free lists 100 compute-hours/month and 1 GB per project, with scale-to-zero after five idle minutes. Staying inside those Neon allowances costs $0; usage beyond them may be billable. These are current published plan terms, not a guarantee of account eligibility or future pricing.
+- Neon is not provisioned. Its pooled endpoint uses PgBouncer transaction mode and does not support session-level advisory locks and some other session features. Start compatibility verification with Neon’s direct endpoint; test migrations, LangGraph checkpoint create/pause/resume, approval writes, and SQLAlchemy pooling on an actual project before launch. The current app shares a URL for SQLAlchemy and the psycopg checkpointer, so switching to a pooled endpoint is not verified.
 - Chroma can be reconstructed from versioned synthetic documents; hosted persistent disk is not required by this deployment shape.
 - Hosted startup, migrations, health checks, quotas, cold starts, resource use, and account-specific costs are unverified.
 - The deployed app must set `OPSPILOT_ENV=production` and use hosted secret storage for database/provider credentials.
 - There is no public URL. GitHub remote is not configured and no push has been made.
+
+## Required account and approval steps
+
+1. Connect/authorize GitHub and explicitly approve creation of the intended public repository and push of the two local Phase 4 commits.
+2. Authorize Hugging Face Space creation and public deployment. For an individual Docker Space, confirm that HF PRO is already active or explicitly approve its currently listed $9/month subscription. CPU Basic itself has no hourly compute charge.
+3. Authorize Neon account/project use (Free plan is sufficient for initial low-volume validation if quotas fit), and add the direct PostgreSQL URL to the Hugging Face Space secrets/settings. Do not send the database URL or API keys in chat.
+4. Explicitly approve public launch after the Neon hosted checkpoint and write paths pass the verification checklist.
+
+Groq provider usage is account/quota dependent and was not priced here. Hosted cold-start latency, actual Groq spend, Neon consumption, and combined monthly spend cannot be measured before hosted testing.
