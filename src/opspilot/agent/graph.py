@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import operator
 import time
@@ -34,6 +35,8 @@ from opspilot.services.actions import (
     execute_approved_action,
 )
 
+logger = logging.getLogger("opspilot.agent")
+
 
 class InvestigationState(TypedDict, total=False):
     run_id: str
@@ -54,6 +57,7 @@ class InvestigationState(TypedDict, total=False):
     deadline_at: float
     next_node: str
     next_tool: dict[str, Any]
+    last_tool_call: dict[str, Any]
     report: dict[str, Any]
     proposed_action: dict[str, Any]
     approval_decision: str
@@ -178,6 +182,25 @@ def build_investigation_graph(
             },
             "remaining_seconds": max(2, int(deadline - now)),
         }
+        previous_call = state.get("last_tool_call", {})
+        previous_observation = (
+            state.get("observations", [])[-1] if state.get("observations") else {}
+        )
+        previous_args = previous_call.get("arguments", {})
+        if (
+            previous_call.get("name") == "search_logs"
+            and not previous_observation.get("records")
+            and any(previous_args.get(key) for key in ("query", "levels", "event_codes"))
+        ):
+            context["adaptive_guidance"] = (
+                "The last filtered log search returned no records. Broaden once with "
+                "search_logs arguments {} before concluding logs are absent."
+            )
+        elif previous_call.get("name") == "search_runbooks" and previous_observation.get("records"):
+            context["adaptive_guidance"] = (
+                "A relevant Chroma runbook has been retrieved; finish unless earlier evidence "
+                "leaves a material question unanswered."
+            )
         prompt_tokens_estimate = math.ceil((len(json.dumps(context, ensure_ascii=False)) + 700) / 3)
         remaining_cost_tokens = math.floor(
             (settings.max_estimated_cost_usd - state.get("estimated_cost_usd", 0.0))
@@ -203,10 +226,58 @@ def build_investigation_graph(
                 ],
             }
         context["completion_token_limit"] = completion_limit
+        retry_reserve = prompt_tokens_estimate + completion_limit
+        available_cost_tokens = math.floor(
+            (settings.max_estimated_cost_usd - state.get("estimated_cost_usd", 0.0))
+            * 1_000_000
+            / 5.0
+        )
+        if (
+            total_tokens + (2 * retry_reserve) <= settings.max_tokens_per_investigation
+            and (2 * retry_reserve) <= available_cost_tokens
+        ):
+            context["tool_use_retry_token_reserve"] = retry_reserve
         try:
             choice, used_tokens = provider.choose_tool(context)
             choice = validate_choice(choice)
         except Exception as exc:
+            error_trace = {
+                "kind": "model_error",
+                "error_type": type(exc).__name__,
+                "node": "planner",
+            }
+            status_code = getattr(exc, "status_code", None)
+            provider_code = getattr(exc, "code", None)
+            provider_param = getattr(exc, "param", None)
+            if status_code is not None:
+                error_trace["status_code"] = int(status_code)
+            if isinstance(provider_code, str) and len(provider_code) <= 80:
+                error_trace["provider_code"] = provider_code
+            if isinstance(provider_param, str) and len(provider_param) <= 80:
+                error_trace["provider_param"] = provider_param
+            response = getattr(exc, "response", None)
+            headers = getattr(response, "headers", {})
+            if hasattr(exc, "opspilot_retry_attempted"):
+                error_trace["provider_retry_attempted"] = bool(exc.opspilot_retry_attempted)
+                error_trace["provider_retry_delay_seconds"] = float(
+                    exc.opspilot_retry_delay_seconds
+                )
+                error_trace["provider_remaining_seconds"] = int(exc.opspilot_remaining_seconds)
+            error_trace["run_seconds_remaining"] = max(0, int(deadline - time.time()))
+            for header, trace_field in (
+                ("retry-after", "retry_after"),
+                ("x-ratelimit-reset-tokens", "rate_limit_reset_tokens"),
+            ):
+                value = headers.get(header) if headers else None
+                if value and len(value) <= 80:
+                    error_trace[trace_field] = value
+            logger.warning(
+                "planner_request_failed error_type=%s status=%s code=%s param=%s",
+                type(exc).__name__,
+                getattr(exc, "status_code", None),
+                getattr(exc, "code", None),
+                getattr(exc, "param", None),
+            )
             return {
                 "status": "failed",
                 "error_code": "planner_unavailable",
@@ -218,9 +289,7 @@ def build_investigation_graph(
                         ),
                     }
                 ],
-                "tool_trace": [
-                    {"kind": "model_error", "error_type": type(exc).__name__, "node": "planner"}
-                ],
+                "tool_trace": [error_trace],
                 "next_node": "finalize",
             }
         next_turns = turns + 1
@@ -246,6 +315,9 @@ def build_investigation_graph(
             "tool_name": choice.name,
             "rationale": choice.rationale[:400],
         }
+        decision_mode = getattr(provider, "last_decision_mode", None)
+        if decision_mode:
+            trace["provider_decision_mode"] = decision_mode
         if choice.name == "finish":
             return {
                 "loop_turns": next_turns,
@@ -294,6 +366,10 @@ def build_investigation_graph(
         )
         return {
             "observations": [observation.model_dump(mode="json")],
+            "last_tool_call": {
+                "name": selected.get("name", ""),
+                "arguments": selected.get("arguments", {}),
+            },
             "tool_calls": state.get("tool_calls", 0) + 1,
             "tool_trace": [
                 {

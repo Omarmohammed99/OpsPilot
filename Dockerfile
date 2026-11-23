@@ -16,6 +16,7 @@ COPY --from=uv-bin /uv /uvx /bin/
 WORKDIR /app
 RUN addgroup --system opspilot && adduser --system --ingroup opspilot opspilot
 COPY pyproject.toml uv.lock .python-version README.md ./
+RUN uv sync --locked --no-dev --extra checkpoint --no-install-project
 COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./

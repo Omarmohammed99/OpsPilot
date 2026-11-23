@@ -193,7 +193,9 @@ def test_ambiguous_evidence_abstains_without_action(db_factory, chroma_path):
     )
     assert result["status"] == "completed"
     assert not result.get("proposed_action")
-    assert "does not establish" in result["report"]["probable_root_cause"]
+    assert result["report"]["probable_root_cause"].startswith(
+        ("No cause can be determined", "The available evidence does not establish")
+    )
     with db_factory() as db:
         assert db.scalar(select(ProposedAction)) is None
 

@@ -88,7 +88,7 @@ class RunbookSearchArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=3, max_length=300)
     error_codes: list[str] = Field(default_factory=list, max_length=10)
-    limit: int = Field(default=4, ge=1, le=8)
+    limit: int = Field(default=1, ge=1, le=2)
 
     @field_validator("error_codes")
     @classmethod
@@ -143,11 +143,24 @@ class ReadOnlyInvestigationTools:
             if name == "search_runbooks":
                 return self._runbooks(observation_id, raw_arguments, incident.service_key)
             raise ValueError("Tool is not in the read-only allowlist")
-        except (ValueError, ValidationError, TypeError) as exc:
+        except ValidationError:
+            allowed = TOOL_ARGUMENT_FIELDS.get(name, "none")
             return ToolObservation(
                 observation_id=observation_id,
                 tool_name=name,
-                summary=f"Tool input rejected: {str(exc)[:300]}",
+                summary=(
+                    f"Invalid arguments for {name}. Allowed fields: {allowed}. "
+                    "Use exact field names; omit filters that are not needed."
+                ),
+                error="invalid_tool_input",
+            )
+        except (ValueError, TypeError):
+            return ToolObservation(
+                observation_id=observation_id,
+                tool_name=name,
+                summary=(
+                    "Tool request rejected; use the documented arguments for this read-only tool."
+                ),
                 error="invalid_tool_input",
             )
         except Exception:
@@ -258,8 +271,13 @@ class ReadOnlyInvestigationTools:
             observation_id=observation_id,
             tool_name="search_logs",
             summary=(
-                f"Matched {len(records)} log record(s) within the incident's session and "
-                "time window."
+                f"Matched {len(records)} log record(s) within the incident's session and time "
+                "window."
+                + (
+                    " If this search used filters, broaden once with an empty argument object."
+                    if not records and (args.query or args.levels or args.event_codes)
+                    else ""
+                )
             ),
             records=records,
             evidence_refs=[f"log:{item['id']}" for item in records],
@@ -358,7 +376,7 @@ class ReadOnlyInvestigationTools:
                 "source_key": match["metadata"].get("source_key"),
                 "title": match["metadata"].get("title"),
                 "doc_type": match["metadata"].get("doc_type"),
-                "content": _redact_text(match["text"], 1200),
+                "content": _redact_text(match["text"], 900),
                 "distance": float(match["distance"]),
                 "license": match["metadata"].get("license"),
             }
@@ -380,6 +398,16 @@ TOOL_NAMES = {
     "list_work_orders",
     "search_incident_history",
     "search_runbooks",
+}
+
+TOOL_ARGUMENT_FIELDS = {
+    "get_incident": "none",
+    "list_related_assets": "none",
+    "search_logs": "levels, event_codes, query, start_at, end_at, limit",
+    "list_work_orders": "limit",
+    "search_incident_history": "limit",
+    "search_runbooks": "query, error_codes, limit",
+    "finish": "none",
 }
 
 
