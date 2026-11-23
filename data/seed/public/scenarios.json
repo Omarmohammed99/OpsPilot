@@ -1,0 +1,94 @@
+{
+  "seed_version": "opspilot-scenarios-1.0.0",
+  "seed": 20261123,
+  "scenarios": [
+    {
+      "scenario_id": "db-pool-exhaustion",
+      "incident": {"external_key": "INC-DEMO-DB-001", "title": "Checkout requests timing out", "description": "Checkout latency rose sharply and some requests time out. The database endpoint is reachable, but application requests are queuing.", "severity": "high", "service_key": "checkout-api", "opened_at": "2026-01-12T09:15:00Z"},
+      "asset": {"asset_key": "checkout-api-01", "service_key": "checkout-api", "environment": "demo", "asset_type": "application", "hostname_label": "checkout-api-demo-01", "operational_state": "degraded", "attributes": {"database": "orders-db", "replicas": 2}},
+      "logs": [
+        {"occurred_at": "2026-01-12T09:12:10Z", "level": "WARN", "source": "pool-manager", "message": "Connection acquisition waited 5000ms; active=40 idle=0 max=40", "event_code": "DB-POOL-01", "attributes": {"active": 40, "idle": 0, "max": 40}},
+        {"occurred_at": "2026-01-12T09:13:32Z", "level": "ERROR", "source": "orders-repository", "message": "Timed out waiting for a pooled database connection", "event_code": "DB-POOL-02", "attributes": {"wait_ms": 5000}},
+        {"occurred_at": "2026-01-12T09:14:04Z", "level": "INFO", "source": "health-check", "message": "orders-db TCP health probe succeeded", "event_code": "DB-NET-OK", "attributes": {"target": "orders-db:5432"}}
+      ],
+      "work_orders": [{"order_type": "capacity_review", "status": "in_progress", "summary": "Review checkout database connection usage and pool sizing", "opened_at": "2026-01-12T09:20:00Z"}]
+    },
+    {
+      "scenario_id": "missing-runtime-config",
+      "incident": {"external_key": "INC-DEMO-CFG-001", "title": "Invoice worker fails after release", "description": "Invoice processing stopped immediately after a deployment. The worker starts but exits before consuming messages.", "severity": "high", "service_key": "invoice-worker", "opened_at": "2026-02-03T14:20:00Z"},
+      "asset": {"asset_key": "invoice-worker-01", "service_key": "invoice-worker", "environment": "demo", "asset_type": "worker", "hostname_label": "invoice-worker-demo-01", "operational_state": "degraded", "attributes": {"release": "2026.02.03.1", "queue": "invoice-events"}},
+      "logs": [
+        {"occurred_at": "2026-02-03T14:18:05Z", "level": "INFO", "source": "startup", "message": "Starting invoice worker release 2026.02.03.1", "event_code": "APP-START", "attributes": {"release": "2026.02.03.1"}},
+        {"occurred_at": "2026-02-03T14:18:06Z", "level": "ERROR", "source": "config-loader", "message": "Required setting PAYMENT_API_BASE_URL is missing", "event_code": "CFG-REQUIRED-01", "attributes": {"setting": "PAYMENT_API_BASE_URL"}},
+        {"occurred_at": "2026-02-03T14:18:06Z", "level": "ERROR", "source": "process", "message": "Worker initialization aborted before queue subscription", "event_code": "APP-INIT-FAIL", "attributes": {"queue_subscribed": false}}
+      ],
+      "work_orders": [{"order_type": "deployment_review", "status": "completed", "summary": "Release completed; post-deployment validation was recorded as pending", "opened_at": "2026-02-03T14:05:00Z", "closed_at": "2026-02-03T14:10:00Z"}]
+    },
+    {
+      "scenario_id": "disk-pressure-logs",
+      "incident": {"external_key": "INC-DEMO-DISK-001", "title": "Catalog service returning write errors", "description": "Catalog reads work, but writes fail on one node. The node has recently accumulated unusually large local log files.", "severity": "medium", "service_key": "catalog-api", "opened_at": "2026-03-19T08:40:00Z"},
+      "asset": {"asset_key": "catalog-api-02", "service_key": "catalog-api", "environment": "demo", "asset_type": "application", "hostname_label": "catalog-api-demo-02", "operational_state": "degraded", "attributes": {"mount": "/var/lib/catalog", "replicas": 3}},
+      "logs": [
+        {"occurred_at": "2026-03-19T08:36:19Z", "level": "WARN", "source": "disk-monitor", "message": "Filesystem usage reached 96 percent on /var/lib/catalog", "event_code": "SYS-DISK-96", "attributes": {"mount": "/var/lib/catalog", "used_percent": 96}},
+        {"occurred_at": "2026-03-19T08:37:02Z", "level": "ERROR", "source": "catalog-writer", "message": "Write failed: no space left on device", "event_code": "IO-ENOSPC", "attributes": {"operation": "write"}},
+        {"occurred_at": "2026-03-19T08:38:11Z", "level": "INFO", "source": "log-collector", "message": "Local catalog-api log archive grew by 3.8 GB in the last hour", "event_code": "LOG-GROWTH", "attributes": {"growth_gb": 3.8, "window_minutes": 60}}
+      ],
+      "work_orders": [{"order_type": "storage_cleanup", "status": "open", "summary": "Inspect catalog node disk growth and log retention configuration", "opened_at": "2026-03-19T08:45:00Z"}]
+    },
+    {
+      "scenario_id": "dependency-timeout",
+      "incident": {"external_key": "INC-DEMO-DEP-001", "title": "Profile requests intermittently fail", "description": "Profile reads intermittently fail while the profile service itself remains healthy. Failures correlate with calls to the identity dependency.", "severity": "high", "service_key": "profile-api", "opened_at": "2026-04-02T11:00:00Z"},
+      "asset": {"asset_key": "profile-api-01", "service_key": "profile-api", "environment": "demo", "asset_type": "application", "hostname_label": "profile-api-demo-01", "operational_state": "degraded", "attributes": {"dependency": "identity-api", "timeout_ms": 800}},
+      "logs": [
+        {"occurred_at": "2026-04-02T10:56:42Z", "level": "INFO", "source": "health-check", "message": "profile-api local readiness check passed", "event_code": "APP-READY", "attributes": {"check": "local"}},
+        {"occurred_at": "2026-04-02T10:57:10Z", "level": "ERROR", "source": "identity-client", "message": "GET identity-api /v1/subjects exceeded 800ms request timeout", "event_code": "DEP-TIMEOUT-01", "attributes": {"dependency": "identity-api", "timeout_ms": 800}},
+        {"occurred_at": "2026-04-02T10:58:03Z", "level": "WARN", "source": "identity-client", "message": "Retry budget exhausted after two attempts; circuit breaker opened", "event_code": "DEP-CIRCUIT-OPEN", "attributes": {"attempts": 2}}
+      ],
+      "work_orders": [{"order_type": "dependency_check", "status": "in_progress", "summary": "Check identity-api latency and profile client timeout/retry policy", "opened_at": "2026-04-02T11:05:00Z"}]
+    },
+    {
+      "scenario_id": "certificate-expiry",
+      "incident": {"external_key": "INC-DEMO-TLS-001", "title": "Partner webhook TLS handshake failures", "description": "Inbound partner webhook requests fail TLS negotiation at the edge. Internal application health checks continue to pass.", "severity": "medium", "service_key": "webhook-edge", "opened_at": "2026-05-10T16:30:00Z"},
+      "asset": {"asset_key": "webhook-edge-01", "service_key": "webhook-edge", "environment": "demo", "asset_type": "gateway", "hostname_label": "webhook-edge-demo-01", "operational_state": "degraded", "attributes": {"certificate_name": "hooks.demo.example", "listener": "443"}},
+      "logs": [
+        {"occurred_at": "2026-05-10T16:25:13Z", "level": "WARN", "source": "certificate-monitor", "message": "Certificate hooks.demo.example expires in less than 24 hours", "event_code": "TLS-EXPIRING", "attributes": {"hours_remaining": 19}},
+        {"occurred_at": "2026-05-10T16:27:40Z", "level": "ERROR", "source": "tls-listener", "message": "Handshake rejected: presented certificate is expired", "event_code": "TLS-CERT-EXPIRED", "attributes": {"listener": "443"}},
+        {"occurred_at": "2026-05-10T16:28:02Z", "level": "INFO", "source": "health-check", "message": "webhook-edge local process health check passed", "event_code": "APP-READY", "attributes": {"check": "local"}}
+      ],
+      "work_orders": [{"order_type": "certificate_renewal", "status": "open", "summary": "Renew and validate webhook-edge listener certificate", "opened_at": "2026-05-10T16:35:00Z"}]
+    },
+    {
+      "scenario_id": "stale-worker-queue",
+      "incident": {"external_key": "INC-DEMO-QUEUE-001", "title": "Notification backlog is growing", "description": "Notifications are delayed. The broker is reachable, but queue depth is rising and the worker reports no recent acknowledgements.", "severity": "medium", "service_key": "notification-worker", "opened_at": "2026-06-21T07:10:00Z"},
+      "asset": {"asset_key": "notification-worker-01", "service_key": "notification-worker", "environment": "demo", "asset_type": "worker", "hostname_label": "notification-worker-demo-01", "operational_state": "degraded", "attributes": {"queue": "notifications", "consumer_group": "notify-v1"}},
+      "logs": [
+        {"occurred_at": "2026-06-21T07:05:11Z", "level": "INFO", "source": "broker-client", "message": "Broker connection established; subscribed to notifications", "event_code": "QUEUE-CONNECTED", "attributes": {"queue": "notifications"}},
+        {"occurred_at": "2026-06-21T07:07:00Z", "level": "WARN", "source": "queue-monitor", "message": "Queue depth 18420; oldest message age 27 minutes", "event_code": "QUEUE-BACKLOG", "attributes": {"depth": 18420, "oldest_age_minutes": 27}},
+        {"occurred_at": "2026-06-21T07:08:24Z", "level": "ERROR", "source": "consumer", "message": "No acknowledgement received from consumer loop for 900 seconds", "event_code": "QUEUE-CONSUMER-STALE", "attributes": {"idle_seconds": 900}}
+      ],
+      "work_orders": [{"order_type": "worker_health", "status": "open", "summary": "Inspect notification worker consumer loop and acknowledgement progress", "opened_at": "2026-06-21T07:15:00Z"}]
+    },
+    {
+      "scenario_id": "deployment-version-skew",
+      "incident": {"external_key": "INC-DEMO-DEPLOY-001", "title": "Search requests return inconsistent results", "description": "Search requests succeed but different replicas return different schema errors. The issue began during a staged rollout.", "severity": "high", "service_key": "search-api", "opened_at": "2026-07-08T12:45:00Z"},
+      "asset": {"asset_key": "search-api-03", "service_key": "search-api", "environment": "demo", "asset_type": "application", "hostname_label": "search-api-demo-03", "operational_state": "degraded", "attributes": {"replica_versions": ["2026.07.08.2", "2026.07.08.1"], "rollout_percent": 50}},
+      "logs": [
+        {"occurred_at": "2026-07-08T12:41:08Z", "level": "INFO", "source": "deploy-controller", "message": "Canary rollout advanced to 50 percent", "event_code": "DEPLOY-CANARY", "attributes": {"percent": 50}},
+        {"occurred_at": "2026-07-08T12:42:19Z", "level": "ERROR", "source": "search-index-client", "message": "Replica 2026.07.08.2 rejected field mapping version 17; expected 16", "event_code": "SCHEMA-VERSION-MISMATCH", "attributes": {"replica_version": "2026.07.08.2", "mapping_version": 17}},
+        {"occurred_at": "2026-07-08T12:43:02Z", "level": "INFO", "source": "search-index-client", "message": "Replica 2026.07.08.1 served query successfully using mapping version 16", "event_code": "SEARCH-OK", "attributes": {"replica_version": "2026.07.08.1", "mapping_version": 16}}
+      ],
+      "work_orders": [{"order_type": "release_review", "status": "in_progress", "summary": "Compare canary and stable replica schema compatibility before rollout continuation", "opened_at": "2026-07-08T12:50:00Z"}]
+    },
+    {
+      "scenario_id": "ambiguous-network-symptom",
+      "incident": {"external_key": "INC-DEMO-AMB-001", "title": "Occasional API latency spike", "description": "A small number of requests were slower than usual. The available log sample contains no consistent dependency or resource error; more observation may be needed.", "severity": "low", "service_key": "reporting-api", "opened_at": "2026-08-15T10:05:00Z"},
+      "asset": {"asset_key": "reporting-api-01", "service_key": "reporting-api", "environment": "demo", "asset_type": "application", "hostname_label": "reporting-api-demo-01", "operational_state": "healthy", "attributes": {"replicas": 2, "region": "demo-east"}},
+      "logs": [
+        {"occurred_at": "2026-08-15T10:00:11Z", "level": "INFO", "source": "request-metrics", "message": "Request completed in 420ms; service response successful", "event_code": "HTTP-200", "attributes": {"duration_ms": 420, "status": 200}},
+        {"occurred_at": "2026-08-15T10:01:30Z", "level": "WARN", "source": "request-metrics", "message": "Request completed in 1750ms; no downstream error recorded", "event_code": "LATENCY-SPIKE", "attributes": {"duration_ms": 1750}},
+        {"occurred_at": "2026-08-15T10:03:05Z", "level": "INFO", "source": "health-check", "message": "All reporting-api local readiness checks passed", "event_code": "APP-READY", "attributes": {"ready": true}}
+      ],
+      "work_orders": []
+    }
+  ]
+}
