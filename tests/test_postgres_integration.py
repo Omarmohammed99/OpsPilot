@@ -9,6 +9,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, func, inspect, select, text
 from sqlalchemy.orm import Session
 
+from opspilot.db.base import Base
 from opspilot.db.models import ApplicationLog, Asset, Incident, KnowledgeDocument, WorkOrder
 from opspilot.ingestion.pipeline import run_ingestion
 from opspilot.retrieval.chroma_store import KnowledgeIndex
@@ -29,6 +30,9 @@ def postgres_test_db():
     config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     command.upgrade(config, "head")
     engine = create_engine(url, pool_pre_ping=True)
+    managed_tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
+    with engine.begin() as connection:
+        connection.execute(text(f"TRUNCATE TABLE {managed_tables} RESTART IDENTITY CASCADE"))
     yield engine
     engine.dispose()
 
