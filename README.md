@@ -107,6 +107,52 @@ Neon Free currently includes 100 compute-hours/month and 1 GB per project with s
 - Groq free/account quotas may throttle requests; the client honors bounded retry timing, so investigation latency can vary.
 - No hosted deployment, public URL, hosted database compatibility test, or account-specific cost estimate is claimed.
 
+## Vercel Hobby deployment
+
+OpsPilot includes a Vercel Container Runtime configuration while preserving the
+existing local and Docker Compose deployment. The Vercel project selects the
+container framework in `vercel.json` and builds `Dockerfile.vercel`. That image
+sets Vercel runtime mode explicitly, binds Uvicorn to Vercel's injected `PORT`,
+and stores the rebuildable Chroma index under `/tmp`. Chroma is recreated from
+the versioned synthetic runbooks on each new instance; do not expect durable
+Chroma files. Neon PostgreSQL remains the source of durable incident/action/audit
+data and LangGraph checkpoints.
+
+Set these values in Vercel Project Settings → Environment Variables, then
+create a new deployment. Never commit them or print them in logs:
+
+- `DATABASE_URL`: Neon PostgreSQL URL (direct endpoint; use TLS).
+- `GROQ_API_KEY`: Groq API key when `LLM_PROVIDER=groq`.
+- `OPSPILOT_ENV`: `production` (enables secure session cookies).
+- `LLM_PROVIDER`: `groq` (the default).
+- `VERCEL_SUPPORT_LARGE_FUNCTIONS`: `1` if the project is not already enrolled
+  in Vercel's Large Functions beta.
+
+The locally built Vercel image is about 2.12 GB uncompressed, above Vercel's
+standard function package-size threshold. It fits the documented 5 GB Large
+Functions beta limit; new projects are automatically enrolled, while existing
+projects may need `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` before the first deploy.
+Vercel's Hobby memory and duration limits still apply to the running container.
+
+Vercel startup takes a PostgreSQL advisory lock before migrations,
+LangGraph-checkpoint DDL, stale-run recovery, and idempotent seed ingestion.
+This prevents simultaneous cold-start instances from racing schema changes or
+interrupting work that is still inside its investigation deadline. Each new
+instance rebuilds its own temporary Chroma index. If that index is unhealthy,
+only its path under the OS temporary directory is reset before rebuilding.
+
+The current investigation wall-clock budget is 90 seconds, within Vercel Hobby's
+documented 300-second function maximum. Hobby also has monthly function, CPU,
+memory, and transfer quotas; when a quota is reached, usage pauses until its
+reset rather than automatically upgrading. If an invocation is interrupted, a
+run remains resumable from its Neon checkpoint; OpsPilot does not rely on a
+permanently running worker or a paid queue. Vercel's container runtime is in
+beta, so verify current Hobby quotas in the Vercel dashboard before public use.
+
+Verify a Vercel build with `vercel build` after linking the project. The local
+Docker path remains `docker compose up --build`; it continues to use persistent
+local Chroma and PostgreSQL volumes.
+
 ## Future improvements
 
-Evaluate a semantic embedding provider, add quality benchmarks across every scenario, measure hosted cold-start and investigation latency, define session/audit retention, and verify Neon connection-pool behavior under the Render configuration. Any future actions should remain separately allowlisted and approval gated.
+Evaluate a semantic embedding provider, add quality benchmarks across every scenario, measure hosted cold-start and investigation latency, define session/audit retention, and verify Neon connection-pool behavior under Vercel. Any future actions should remain separately allowlisted and approval gated.

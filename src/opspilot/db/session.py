@@ -1,3 +1,4 @@
+import os
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
@@ -9,7 +10,17 @@ from opspilot.config import get_settings
 
 def make_engine(url: str | None = None, *, pool_pre_ping: bool = True) -> Engine:
     url = url or get_settings().safe_database_url
-    options: dict[str, object] = {"pool_pre_ping": pool_pre_ping, "pool_size": 5, "max_overflow": 5}
+    if os.getenv("VERCEL") == "1":
+        # Each serverless instance owns a small pool; Vercel scales instances horizontally.
+        options: dict[str, object] = {
+            "pool_pre_ping": pool_pre_ping,
+            "pool_size": 1,
+            "max_overflow": 2,
+            "pool_timeout": 10,
+            "pool_recycle": 300,
+        }
+    else:
+        options = {"pool_pre_ping": pool_pre_ping, "pool_size": 5, "max_overflow": 5}
     if url.startswith("sqlite"):
         options = {"pool_pre_ping": pool_pre_ping}
     return create_engine(url, **options)

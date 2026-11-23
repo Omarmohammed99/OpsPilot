@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 import uuid
 from collections import defaultdict, deque
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -44,8 +45,9 @@ from opspilot.db.models import (
     ProposedAction,
 )
 from opspilot.db.session import SessionLocal, engine
+from opspilot.db.startup import startup_initialization_lock
 from opspilot.ingestion.pipeline import run_ingestion
-from opspilot.retrieval.chroma_store import KnowledgeIndex
+from opspilot.retrieval.chroma_store import KnowledgeIndex, reset_ephemeral_chroma_directory
 from opspilot.services.actions import ActionConflict, decide_action
 from opspilot.services.demo_sessions import (
     InvalidDemoSession,
@@ -79,6 +81,35 @@ def _safe_provider_error(exc: Exception) -> str:
         if "not configured" in str(exc).lower()
         else "provider_unavailable"
     )
+
+
+def _recover_stale_investigations(session_factory: sessionmaker[Session], stale_after: int) -> int:
+    """Recover only expired runs; a newly scaled instance must not interrupt active work."""
+    cutoff = datetime.now(UTC) - timedelta(seconds=stale_after)
+    with session_factory() as db, db.begin():
+        stale_runs = list(
+            db.scalars(
+                select(InvestigationRun)
+                .where(
+                    InvestigationRun.status.in_(["queued", "running"]),
+                    InvestigationRun.started_at < cutoff,
+                )
+                .with_for_update(skip_locked=True)
+            )
+        )
+        for run in stale_runs:
+            run.status = "interrupted"
+            db.add(
+                AuditEvent(
+                    demo_session_id=run.demo_session_id,
+                    incident_id=run.incident_id,
+                    run_id=run.id,
+                    actor_id="system",
+                    event_type="application_restart_recovery",
+                    details={"message": "Resume is available from the latest checkpoint."},
+                )
+            )
+    return len(stale_runs)
 
 
 @contextmanager
@@ -405,40 +436,50 @@ def build_app(
             from opspilot.cli import _alembic_config
             from opspilot.db.checkpoint import setup_checkpoint_tables
 
-            command.upgrade(_alembic_config(), "head")
-            setup_checkpoint_tables()
-            deadline = time.monotonic() + 60
-            while True:
-                try:
-                    with session_factory() as db:
-                        run_ingestion(db, app.state.knowledge_factory())
-                    break
-                except Exception as exc:
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError(
-                            "Database or Chroma startup initialization failed"
-                        ) from exc
-                    time.sleep(2)
-            with session_factory() as db, db.begin():
-                interrupted = list(
-                    db.scalars(
-                        select(InvestigationRun).where(
-                            InvestigationRun.status.in_(["queued", "running"])
-                        )
+            if os.getenv("VERCEL") == "1":
+                if not os.getenv("DATABASE_URL"):
+                    raise RuntimeError("DATABASE_URL is required for Vercel deployments")
+                if app_settings.llm_provider == "groq" and not app_settings.groq_api_key:
+                    raise RuntimeError(
+                        "GROQ_API_KEY is required for the configured Vercel provider"
                     )
+
+            # Vercel can create multiple instances at once. Serialize shared PostgreSQL setup,
+            # while every instance rebuilds its own ephemeral Chroma index from versioned seeds.
+            with startup_initialization_lock(app_settings.safe_database_url):
+                command.upgrade(_alembic_config(), "head")
+                setup_checkpoint_tables()
+                _recover_stale_investigations(
+                    session_factory,
+                    stale_after=app_settings.max_active_investigation_seconds + 30,
                 )
-                for run in interrupted:
-                    run.status = "interrupted"
-                    db.add(
-                        AuditEvent(
-                            demo_session_id=run.demo_session_id,
-                            incident_id=run.incident_id,
-                            run_id=run.id,
-                            actor_id="system",
-                            event_type="application_restart_recovery",
-                            details={"message": "Resume is available from the latest checkpoint."},
+                deadline = time.monotonic() + 60
+                while True:
+                    try:
+                        index = app.state.knowledge_factory()
+                        try:
+                            index.health()
+                        except Exception as exc:
+                            if os.getenv("VERCEL") != "1":
+                                raise
+                            logger.warning(
+                                "vercel_chroma_index_rebuild reason_type=%s", type(exc).__name__
+                            )
+                            reset_ephemeral_chroma_directory(app_settings.chroma_persist_directory)
+                            index = app.state.knowledge_factory()
+                            index.health()
+                        with session_factory() as db:
+                            run_ingestion(db, index)
+                        break
+                    except Exception as exc:
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError(
+                                "Database or Chroma startup initialization failed"
+                            ) from None
+                        logger.warning(
+                            "startup_initialization_retry error_type=%s", type(exc).__name__
                         )
-                    )
+                        time.sleep(2)
             app.state.ready = True
         yield
 

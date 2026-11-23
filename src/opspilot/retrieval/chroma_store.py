@@ -1,5 +1,7 @@
 """Persistent local Chroma collections and citation-ready retrieval."""
 
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +13,16 @@ from opspilot.config import get_settings
 from opspilot.datasets.schemas import KnowledgeDocumentInput
 from opspilot.retrieval.chunking import chunk_document
 from opspilot.retrieval.embeddings import build_embedding_function
+
+
+def reset_ephemeral_chroma_directory(path: Path) -> None:
+    """Remove a broken Chroma index only when it is contained in temporary storage."""
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    target = path.resolve()
+    if target == temp_root or temp_root not in target.parents:
+        raise ValueError("Refusing to reset Chroma outside the temporary directory")
+    shutil.rmtree(target, ignore_errors=True)
+    target.mkdir(parents=True, exist_ok=True)
 
 
 class KnowledgeIndex:
