@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: opspilot
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health/ready
+    envVars:
+      - key: OPSPILOT_ENV
+        value: production
+      - key: CHROMA_MODE
+        value: embedded
+      - key: CHROMA_PERSIST_DIRECTORY
+        value: /tmp/opspilot-chroma
+      - key: EMBEDDING_PROVIDER
+        value: local_hash
+      - key: LLM_PROVIDER
+        value: groq
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false

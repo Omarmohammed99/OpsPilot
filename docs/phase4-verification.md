@@ -46,21 +46,22 @@ The root-cause metric is token overlap against a longer reference sentence; its 
 
 On Windows, PostgreSQL integration tests can run in a disposable Linux container on the Compose network; see the implementation session run record for the exact environment invocation. Never point tests at a production or personal database.
 
-## Deployment readiness and unverified items
+## Render Free resource check and deployment readiness
 
-- The Docker image and Compose stack are intended for a Hugging Face Docker Space. The image listens on port 7860. Public deployment remains unverified.
-- Service snapshot checked 2026-11-23: Hugging Face CPU Basic is listed as 2 vCPU, 16 GB RAM, 50 GB non-persistent disk, and no hourly hardware fee. However, creating a Docker Space from a personal account requires HF PRO at $9/month (organizations require Team or Enterprise); free personal accounts cannot create a Docker Space. Neon Free lists 100 compute-hours/month and 1 GB per project, with scale-to-zero after five idle minutes. Staying inside those Neon allowances costs $0; usage beyond them may be billable. These are current published plan terms, not a guarantee of account eligibility or future pricing.
-- Neon is not provisioned. Its pooled endpoint uses PgBouncer transaction mode and does not support session-level advisory locks and some other session features. Start compatibility verification with Neon’s direct endpoint; test migrations, LangGraph checkpoint create/pause/resume, approval writes, and SQLAlchemy pooling on an actual project before launch. The current app shares a URL for SQLAlchemy and the psycopg checkpointer, so switching to a pooled endpoint is not verified.
-- Chroma can be reconstructed from versioned synthetic documents; hosted persistent disk is not required by this deployment shape.
-- Hosted startup, migrations, health checks, quotas, cold starts, resource use, and account-specific costs are unverified.
-- The deployed app must set `OPSPILOT_ENV=production` and use hosted secret storage for database/provider credentials.
-- There is no public URL. GitHub remote is not configured and no push has been made.
+- Render lists Free web services at 0.1 CPU/512 MB, with 750 included instance-hours per workspace per month, 15-minute idle spin-down, and ephemeral disk. Idle services wake with a cold start. The `render.yaml` blueprint uses a Docker Web Service and `/api/health/ready` health check.
+- Local simulation under the exact 0.1 CPU/512 MB limit reached ready status on the final image with `PORT=10000`. It applied startup migrations, created/used PostgreSQL checkpointer tables, rebuilt Chroma to 7 troubleshooting chunks and 1 error-reference chunk, and used 234 MiB maximum observed during startup (211.5 MiB after ready). Startup took roughly two minutes under this CPU cap. This does not measure peak request memory under a real Groq investigation or hosted traffic.
+- Chroma used an empty container-local `/tmp/opspilot-chroma` path and was populated from the versioned document corpus at application startup. The local session therefore demonstrated reconstruction without a persistent vector volume. Render's ephemeral filesystem loss is compatible with that design.
+- The Docker entrypoint now binds to Render's injected `PORT`, defaulting to 7860 for local Compose. Render health and real request behavior remain unverified.
+- The current process-local request limiter keys on the peer IP. Render documents that apps normally see a proxy IP unless they read forwarded client IP headers. Until Render header behavior is confirmed, this is a conservative shared per-proxy limit of 90 requests per minute, not a per-visitor quota; a busy public demo may see unrelated visitors share that limit.
+- Service snapshot checked 2026-11-23: Render Free is $0 compute, with the usage limits above. Neon Free lists 100 compute-hours/month and 1 GB per project, with scale-to-zero after five idle minutes. Staying within the Neon Free quota costs $0; usage beyond allowances may be billable. These published quotas may change.
+- Neon is not provisioned. Its pooled endpoint uses PgBouncer transaction mode and does not support session-level advisory locks and some other session features. Start hosted compatibility checks with Neon’s direct endpoint; verify migrations, checkpoint pause/resume, approval writes, and SQLAlchemy connections against the actual project. The app currently shares a URL between SQLAlchemy and the psycopg checkpointer, so pooled endpoint compatibility remains unverified.
+- No hosted Render health check, Neon migration/checkpoint test, account-specific quota check, hosted Groq run, or public URL exists yet.
+- `render.yaml` requires `DATABASE_URL` and `GROQ_API_KEY` to be entered as private service secrets. Do not commit them or send them in chat.
 
-## Required account and approval steps
+## Authentication required to continue
 
-1. Connect/authorize GitHub and explicitly approve creation of the intended public repository and push of the two local Phase 4 commits.
-2. Authorize Hugging Face Space creation and public deployment. For an individual Docker Space, confirm that HF PRO is already active or explicitly approve its currently listed $9/month subscription. CPU Basic itself has no hourly compute charge.
-3. Authorize Neon account/project use (Free plan is sufficient for initial low-volume validation if quotas fit), and add the direct PostgreSQL URL to the Hugging Face Space secrets/settings. Do not send the database URL or API keys in chat.
-4. Explicitly approve public launch after the Neon hosted checkpoint and write paths pass the verification checklist.
+At the first auth check, GitHub CLI, Render CLI, and Neon CLI were absent, no GitHub/Render/Neon MCP tools were connected, and no relevant API credential environment variables were present. Git Credential Manager is installed but access to enumerate saved credentials was denied. No external calls or writes were attempted. The user said they would connect the accounts; continue only after the secure sign-in state is available.
 
-Groq provider usage is account/quota dependent and was not priced here. Hosted cold-start latency, actual Groq spend, Neon consumption, and combined monthly spend cannot be measured before hosted testing.
+Once connected, the authorized workflow is to create and push the public GitHub repository, configure the Neon Free project and secret, deploy the Render Free service, then run a hosted real-provider investigation that verifies checkpointed approval, the approved database update, rejection without update, and duplicate-approval idempotency. No paid plan/resource is authorized.
+
+Render cold-start latency, Groq charges/quota, Neon usage, and combined monthly spend depend on actual accounts and usage. Current documented free quotas do not guarantee future limits.

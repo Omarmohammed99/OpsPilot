@@ -26,5 +26,5 @@ RUN uv sync --locked --no-dev --no-editable --extra checkpoint \
     && chown -R opspilot:opspilot /app/data/chroma
 USER opspilot
 EXPOSE 7860
-CMD ["uvicorn", "opspilot.main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "uvicorn opspilot.main:app --host 0.0.0.0 --port ${PORT:-7860}"]
 
